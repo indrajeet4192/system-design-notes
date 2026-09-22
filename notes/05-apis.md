@@ -1,7 +1,7 @@
 # APIs — how programs talk to each other
 
-Notes from the API lecture: why APIs exist, why we never hand our database to strangers,
-and the **five API types** we'll keep meeting all course. Small topic, but pure interview
+Notes on APIs: why APIs exist, why we never hand our database to strangers,
+and the **five API types** we'll keep meeting all along. Small topic, but pure interview
 gold — "which API would you pick and why?" is a classic follow-up.
 
 ---
@@ -23,7 +23,7 @@ gold — "which API would you pick and why?" is a classic follow-up.
 
 ## Why not just open the database?
 
-Tempting shortcut: hand the consumer direct DB access. Lecturer's verdict —
+Tempting shortcut: hand the consumer direct DB access. The honest verdict —
 *"This can be dangerous."*
 
 - The consumer would have to handle **DB query scenarios** themselves — they need our
@@ -57,7 +57,7 @@ Tempting shortcut: hand the consumer direct DB access. Lecturer's verdict —
   the same API because neither cares what language the other side used.
   **Any client, any server.**
 - **Open vs restricted/private**: we choose the audience — open so other applications
-  can integrate, or restricted to our own front end only. *"It is up to us how do we
+  can integrate, or restricted to our own front end only. *"It is up to us how we
   want to expose our APIs."*
 
 Two main use cases for exposing APIs:
@@ -69,14 +69,15 @@ Two main use cases for exposing APIs:
 
 ## The five API types
 
-*"These are the most used five types of APIs"* — the core list, in lecture order.
+*"These are the most used five types of APIs"* — the core list, in the order we'll
+survey them.
 
 ### 1. REST — Representational State Transfer
 
-- The **most common** style today, prized for its *"easiness, its structure and its
-  ability to easily maintain a large amount of data with low volume."*
+- The **most common** style today, prized for its simplicity, its structure, and the
+  ability to maintain a large amount of data with low volume.
 - Ships data as **JSON** over **HTTP** — readable, simple, huge ecosystem.
-- Gets a full lesson of its own next: [REST APIs](./06-rest-apis.md).
+- Gets a full note of its own next: [REST APIs](./06-rest-apis.md).
 
 ### 2. SOAP — Simple Object Access Protocol
 
@@ -97,8 +98,8 @@ Two main use cases for exposing APIs:
 ### 4. gRPC — Google's Remote Procedure Call framework
 
 - **g + RPC** = Remote Procedure Calls; the *g* is often said to stand for **Google**.
-- Payload format = **Protocol Buffers** (binary) — *"very much efficient than JSON and
-  XML combined"*; much smaller size means **faster transfer**.
+- Payload format = **Protocol Buffers** (binary) — far more efficient than JSON and
+  XML combined; much smaller size means **faster transfer**.
 - Runs over **HTTP/2**; primary job is **microservice-to-microservice** internal calls
   where latency must stay low. *(this one always trips me up in interviews)*
 
@@ -109,7 +110,7 @@ Two main use cases for exposing APIs:
 - Once established, the **backend can initiate** the conversation — push **chat
   messages, live scores, notifications** — instead of the front end constantly
   **polling** for updates.
-- Lecture example: Telusko's own **quiz platform** keeps quiz connections alive over
+- Real example: an ed-tech **quiz platform** keeps quiz connections alive over
   WebSockets — marks scored by response time + answer correctness, and GIFs and
   notifications ride the same channel.
 
@@ -149,6 +150,48 @@ Polling loop vs WebSocket channel:
 
 > Decide with three questions: **who is calling, how real-time must it be, and what
 > payload format fits** — not by whatever is trending this year.
+
+---
+
+## The design concerns that follow the types
+
+Pick the right *kind* of API and the next layer of interview questions is about how
+you harden it.
+
+### Idempotency — retries without double effects
+
+- **Idempotent** means "call it twice, the result matches calling it once". **GET,
+  PUT and DELETE are idempotent; POST is not** — a retried POST usually creates two
+  resources.
+- Where it bites: the client's network glitches mid-request and retries a "create
+  order" call — without protection you've charged twice.
+- Fix: the client sends an **idempotency key** (a UUID) in a header; the server
+  remembers keys and returns the *first* response for a repeated key instead of
+  re-running the action.
+
+### Pagination — never return the whole table
+
+- A million-row `GET /users` can't come back in one response, so the API slices it.
+- **Offset/limit** (`?page=2&limit=50`) is simple but drifts when rows are inserted
+  mid-pagination, and deep offsets get slow.
+- **Cursor-based** (`?after=<token>`) is stable under concurrent writes and cheap to
+  follow, at the cost of no random page jumps.
+- Where does the "next" pointer live? In the wrapped response metadata — another
+  reason the **always-wrap** rule from [REST APIs](./06-rest-apis.md) pays off.
+
+### Auth — who is allowed to call what
+
+- **API key** — a shared secret per caller; simple for third-party integrations, but
+  it travels with the request and grants everything it can reach.
+- **OAuth 2.0** — the user approves, the client receives a short-lived **access
+  token** plus a **refresh token** to mint new ones. Users grant and revoke access
+  without ever sharing a password — this is the "log in with Google/GitHub" flow.
+- **JWT** — a self-signed token (header.payload.signature) the server verifies on its
+  own, no token store needed — which is why JWTs spread well across microservices.
+  Trade-off: valid until expiry, so it can't be revoked instantly.
+- Sequence that keeps it straight: **API key = machine identity · OAuth 2.0 =
+  delegated user consent · JWT = signed capabilities card** (and OAuth often *issues*
+  JWTs).
 
 ---
 

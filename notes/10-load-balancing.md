@@ -2,7 +2,7 @@
 
 This note is where the Alien Bank story finally earns its keep. The little middleman who balanced counters 1 and 2 is the single most-asked component in system design interviews, so we go deep: the two core duties, the routing algorithms with their numbers, health checks, and the session problem.
 
-In the course roadmap this note sits at the heart of the *scaling and distribution* module, right before replication, partitioning, and the CAP theorem — so almost everything later builds on the load balancer's core lesson.
+This note sits at the heart of the scaling-and-distribution story, right before replication, partitioning, and the CAP theorem — almost everything later builds on the load balancer's core idea.
 
 ## The middleman story, continued
 
@@ -10,7 +10,7 @@ In the course roadmap this note sits at the heart of the *scaling and distributi
 - The escalation had real numbers. A single cashier at 10 min/customer was only 6 customers an hour (rush hour would break the system entirely); training sliced it to 5 min, and better tools — a bigger desk, a cash-counting machine, an advance form that kills the "what do you need?" chat — brought it to 3 min.
 - Even at 3 min, one counter meant the 10th customer waited 27 minutes. The fix was counter #2. And the minute there are two counters, "which counter do I stand at?" stops being an idle question.
 - The final problem was wasted capacity: the gate sat next to counter 1, so most customers queued there while counter 2 sat idle.
-- Fix: a **middleman**. Every customer reports to him first; he peeks at both counters, sees 10 people at counter 1 vs 5 at counter 2, and reroutes the next arrivals toward counter 2 until the totals balance around 11/11.
+- Fix: a **middleman**. Every customer reports to the middleman first; a peek at both counters shows 10 people at counter 1 vs 5 at counter 2, and the next arrivals get rerouted toward counter 2 until the totals balance around 11/11.
 - The best part was the failure mode: one day counter 1 is down, so the middleman just sends everyone to counter 2 until counter 1 is repaired. No customer sees the change, nothing stops.
 
 ```
@@ -24,7 +24,7 @@ In the course roadmap this note sits at the heart of the *scaling and distributi
                               until C1 is repaired
 ```
 
-- The lecturer closed the loop by mapping story to terms: customer queue = requests, middleman = load balancer, cash counter = server, person at the counter = application code, common ledger = centralized database.
+- The story maps to terms: customer queue = requests, middleman = load balancer, cash counter = server, person at the counter = application code, common ledger = centralized database.
 - Every later concept follows the same arc: Issue 1 (slow cashier) maps to code quality — that is where LLD/DSA live, "optimize a slow loop" style, no new hardware. Issue 2 maps to vertical scaling: upgrade the one machine, knowing there is an explicit ceiling. Issue 3 maps to horizontal scaling: add machines. This note lives in the gap that Issue 3 opens up.
 - Fun bridge: the middleman's decision rule — 10 at C1 vs 5 at C2, route to the emptier one — is a poor man's *least connections* algorithm in embryo. We meet it properly below.
 
@@ -38,7 +38,7 @@ In the course roadmap this note sits at the heart of the *scaling and distributi
 - So the DNS no longer returns an actual server's IP address — it returns the **load balancer's IP**. Servers S1, S2, S3 live quietly behind it, anonymous to the outside world.
 - The pressure that forced several servers in the first place (borrowed from the caching note): a homepage showing 3 popular courses pulls from 4 resources in 4 places — one static/DNS asset plus the courses, prices, and course_info tables. That is 10,000 hits per resource with 10,000 daily active users; grow courses 3 -> 6 and it lands at 60,000 requests; and per user, 6 courses x 4 sections = 24 requests for one homepage view. One server buckles under that.
 - And the wall is real: a server with 128 GB of memory, its processes consuming all of it, cannot keep absorbing upgrades forever — the vertical limit.
-- The two options on the table, as the lecture framed it: vertical scaling (more power into one node, only expands so far) and horizontal scaling (many nodes — which is exactly where cross-node relationships and data consistency get tedious). The load balancer is the piece that makes option two tolerable to run.
+- The two options on the table: vertical scaling (more power into one node, only expands so far) and horizontal scaling (many nodes — which is exactly where cross-node relationships and data consistency get tedious). The load balancer is the piece that makes option two tolerable to run.
 - Three things the load balancer buys us:
   - **Even distribution**: requests spread over all servers so no server overheats and none sits idle.
   - **Failure masking**: a dead server is silently dropped and nobody but the load balancer ever knows.
@@ -46,7 +46,7 @@ In the course roadmap this note sits at the heart of the *scaling and distributi
 
 ## The two jobs of a load balancer
 
-- The lecture pins the whole component down to exactly two responsibilities, each with its own mechanism:
+- The whole component comes down to exactly two responsibilities, each with its own mechanism:
   1. **Choose the server** — pick the one that can respond fastest. This is handled by a routing/scheduling algorithm.
   2. **Health-check the servers** — decide which server is "working in a fine condition and can handle the request pretty well." This is handled by health-check parameters.
 - Job 1 is governed by the algorithm; job 2 is governed by interval, timeout, and threshold. Everything in this note hangs off these two.
@@ -82,13 +82,13 @@ flowchart LR
 - Zoom into a microservices topology and the pattern repeats: a load balancer in front of S1, S2, S3, where some services share a database while another owns a completely different one; data flows across them through migration, replication, or partitioning.
 - There, the LB "plays a huge role" passing client requests to the right server for each call. It is a routing backbone, not a single trick.
 - In the component tour it is component #5 of the seven, and the phrase used for it is strong: the LB *owns every request and connection* in the middle. Clients never dial a server directly.
-- It gets watched too: when the course listed monitoring, LB health was one of the things on the list — alongside application errors, full stack traces, and feature regression. If the middleman itself dies, every request walks in unchaperoned, so the router is a single point to keep eyes on.
+- It gets watched too: when the monitoring list is drawn, LB health sits right there on it — alongside application errors, full stack traces, and feature regression. If the middleman itself dies, every request walks in unchaperoned, so the router is a single point to keep eyes on.
 
 ---
 
 ## The routing algorithms
 
-The middleman's "smart routing" is really a choice of algorithm. The lecture walks through six, each with a worked example plus pros and cons, and a warning at the end that no one algorithm is ever used alone.
+The middleman's "smart routing" is really a choice of algorithm. There are six, each with a worked example plus pros and cons, and a warning at the end that no one algorithm is ever used alone.
 
 - **Round Robin** — the simplest: cycle requests S1 -> S2 -> S3 -> S1, one after another. Only a single counter of state is needed.
   - Pros: trivial to implement; every server handles *almost* exactly the same number of requests.
@@ -120,12 +120,12 @@ round robin, one request per turn:
   - Cons: the LB must recompute the average for every server on every request — computationally complex — and traffic spikes skew the averages, so "we need to be very careful there."
 - **IP Hash** — hash the client's IP to a number, then assign number ranges: S1 owns hashes 1-10, S2 owns 11-20, so a hash of 5 lands on S1.
   - Pros: a user's IP rarely changes within a session, so the same server handles the whole session — no session data to replicate.
-  - It also demands healthy servers plus replicated session data as backup — the lecture said that explicitly, so keep both in the answer.
+  - It also demands healthy servers plus replicated session data as backup — stated explicitly, so keep both in the answer.
   - Cons: if a connection breaks, the next request hits a different server that lacks the session, and the user re-enters data — "a loss case, not recommended at all." And scaling is painful: adding S3 means reconfiguring the hash function and reassigning every range — the 1-10/11-20 split gets redrawn because the hash space has to swallow a third server; any add/remove reshuffles all the mappings. Verdict: "not recommended for most microservices architecture we have today."
-  - History lesson from the lecturer: IP hash suited old monolithic/legacy apps; today we use **JWT tokens** so the session survives a server change — "even if the server changes, our request or our session should be consistent."
+  - History: IP hash suited old monolithic/legacy apps; today we use **JWT tokens** so the session survives a server change — "even if the server changes, our request or our session should be consistent."
 - **Weighted Round Robin** — round robin with weights proportional to configuration: S1 with 8 GB gets weight 1, S2 with 16 GB gets weight 2, S3 with 32 GB gets weight 3. The new request lands on the highest-weight server first, then the weighted cycle continues. This is the direct fix for round robin's unequal-hardware flaw.
   - Feel the weights: out of every 6 units of work the 1/2/3 split sends roughly one to S1, two to S2, three to S3 — work lands where the RAM is.
-- **Hybrids** — the lecturer's warning: no real system runs one algorithm alone. "We always work with a hybrid approach; the load balancer basically balances multiple algorithms" — IP hash + round robin, least time + least connection, possibly all six at once, blended until the requirement is met.
+- **Hybrids** — a warning: no real system runs one algorithm alone. "We always work with a hybrid approach; the load balancer basically balances multiple algorithms" — IP hash + round robin, least time + least connection, possibly all six at once, blended until the requirement is met.
 
 > Revision anchor: W-R-G-L-L-I — weighted, round robin, geo, least connection, least time, IP hash. Interview punchline: real load balancers blend several of these, never just one.
 
@@ -193,7 +193,7 @@ flowchart TD
     PARAMS --> ALIVE[Rejoin the pool]
 ```
 
-- The lecturer's wrap-up: the two duties (routing + health check) plus these three parameters give you a complete load balancer.
+- The wrap-up: the two duties (routing + health check) plus these three parameters give you a complete load balancer.
 
 ### The check lifecycle, end to end
 
@@ -202,6 +202,20 @@ flowchart TD
 - Surviving servers quietly absorb the traffic during those ~100 seconds — a short enough window that users never stack up behind a silent machine.
 - Only a sustained healthy stretch (100 successful calls) earns re-entry, so a flapping box cannot buy its way back with two lucky pings.
 
+## Global server load balancing — the LB one level up
+
+- Everything above assumes a single LB in one place, but a truly global app (US + India + EU) has to route *between* data centers first. That is a second layer in front of the first: **GSLB**.
+- **Geo DNS** is the common mechanism: the DNS layer itself returns different LB addresses depending on where the query resolves from, so a US user is handed the US region's LB and an India user the India region's. The app is identical everywhere — only the entry point changes by geography.
+- **Latency-based steering** goes further: probe which region is actually fastest *right now* and favour it over the static geo guess. If the US data center is on fire, GSLB quietly hands European traffic to the German region instead of the US one.
+- GSLB also does the health-check's job at data-center granularity: a region that stops answering its probes is pulled from the answer set. That is the counter-closed scenario from the bank story, one level up.
+- This is the missing link between here and the [replication and partitioning note](11-replication-and-partitioning.md): the DB fix forced "region-local data" earlier in this note, and this is the routing that makes region-local data worth having.
+
+## The load balancer in the real stack
+
+- **DNS round-robin** is the poor man's load balancer: DNS returns S1/S2/S3's addresses in turn, no LB box needed. It works — but it cannot health-check, so dead servers stay in the rotation until someone notices. Good as a first cut; the moment servers need health, you want a real box.
+- **The product ladder**: Nginx and HAProxy are the classic software load balancers — ordinary processes that do L4 and L7 and carry every algorithm above — and AWS ALB/NLB are the managed equivalents (ALB routes at L7 by URL path and host header, NLB pushes raw TCP at L4). Same concepts, different hosts.
+- **Connection draining** is the polite shutdown most production LBs ship: when a server de-registers, the LB lets in-flight requests finish (up to a drain timeout) instead of cutting them mid-request — the "recovery is gradual" instinct applied to removals. And the same box often fronts both directions: one LB in front of the web fleet, another in front of a read-heavy database pool.
+
 ## When a server dies (the counter-down case)
 
 - Bring back the bank: counter 1 down -> middleman routes everyone to counter 2 until repaired. The load balancer does exactly this, automatically.
@@ -209,7 +223,7 @@ flowchart TD
 - Recovery is gradual on purpose: a revived server drains back in a little at a time — same instinct as the middleman balancing toward 11/11 rather than dumping everyone on the emptiest counter.
 - To the user this is invisible. One server vanishing with zero visible impact is the "mask server failures" promise in action — the same promise the middleman made to the bank's customers.
 - This is the load balancer's answer to the data-intense worry list from the components overview: "what if a server / network call / database machine dies?" The LB owns the "server dies" case; the message queue's store-retry-deliver owns delivery failures; the DB notes handle the database machine.
-- Note the pattern, because it recurs across the course: *detect failure, route around it, recover quietly*. The message queue does the same when a consumer is down — it holds the request, retries, and only then reports trouble.
+- Note the pattern, because it recurs across every layer of a resilient system: *detect failure, route around it, recover quietly*. The message queue does the same when a consumer is down — it holds the request, retries, and only then reports trouble.
 - What breaks the magic: sticky sessions plus a dead server. If S1 held the sessions and S1 dies, those users lose them and must re-enter data — the exact "loss case" from the IP Hash discussion. Statelessness (JWT) or session replication is the insurance.
 
 > Mental model to walk into the interview: requests are interchangeable, servers are not. The load balancer is the component that makes the fleet feel interchangeable to the outside world.
@@ -221,11 +235,11 @@ flowchart TD
 - Now scale geography too: servers in the US and in India all hitting one shared database works at low volume, but as users, traffic, and data grow, that single DB cannot serve both regions.
 - If the two regions' data genuinely differs, the clean fix is segregation — one database for the Indian server, one for the US server: faster requests, easier maintenance. Caveat: often the data does not differ, and then the answer flips to multiple databases per region for that one region's many servers.
 - Multiple databases per region also buy disaster recovery, efficiency, reduced latency, and the option to split portions of the data across databases.
-- The two moves the lecture names here: **replication** = *copy* data from one DB into another (survives DB1 failure; DB2 can take DB1's load), and **partitioning** = *divide* data, one slice per DB, each catering its own requests.
+- The two moves named here: **replication** = *copy* data from one DB into another (survives DB1 failure; DB2 can take DB1's load), and **partitioning** = *divide* data, one slice per DB, each catering its own requests.
 - Why replicate at all: avoid a single point of failure; availability — data lives in multiple data centers; and performance/locality — a DB near its server answers faster. All three eventually lift read throughput: a single DB does roughly 10,000 requests/sec, and two identical DBs move toward double that.
 - All of that is the door into the [replication and partitioning note](11-replication-and-partitioning.md): same logic as the load balancer, exactly one layer down.
 
-## Echoes in the rest of the course
+## Echoes across the other notes
 
 - The cache depends on an LB-shaped world too: caches sit behind nodes that must stay reachable, and TTL/eviction logic only makes sense when requests land predictably — sticky or not.
 - The message queue's store-retry-deliver is the same *route around the broken thing* instinct one layer over, for async delivery instead of request routing.

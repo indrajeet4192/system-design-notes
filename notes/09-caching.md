@@ -1,12 +1,12 @@
 # Caching
 
-This note is the full deep-dive on **Component 4** from the components walkthrough — the cache. In the first video it got one line ("a layer that holds frequently used data so the DB isn't hit every time"); in the caching lecture Akshay gave us the whole story: *why* we need it, *where* it lives, how data moves in and out (the four strategies), how entries die (TTL), and how we pick what to throw away (eviction). Interview gold — cache questions show up in almost every round.
+This note is the full deep-dive on **Component 4** from the components walkthrough — the cache. One-line version: "a layer that holds frequently used data so the DB isn't hit every time." The full story follows: *why* we need it, *where* it lives, how data moves in and out (the four strategies), how entries die (TTL), and how we pick what to throw away (eviction). Interview gold — cache questions show up in almost every round.
 
 ---
 
-## The story first — the telusko.com homepage
+## The story first — the homepage flood
 
-The lecture opens with a concrete case study instead of theory. Request path when you open the homepage:
+A concrete case study grounds this instead of theory. Request path when you open the homepage:
 
 - user -> mobile app -> backend -> database -> render back.
 - Every single piece of information on the page = one database hit.
@@ -24,9 +24,9 @@ So one homepage view fans out into **4 resources** (3 tables + 1 DNS static fetc
 - Courses grow from 3 to 6 -> 10,000 x 6 = **60,000 requests** just for the course list.
 - Per user: 6 courses x 4 sections = **24 requests per single homepage view**.
 
-> "For every user, we are hitting 24 requests. This is totally going to break our system." — and he's right. 10k users x 24 = a quarter-million DB calls just to load one page. That latency is what a cache eats, and that latency "nobody wants to wait" for.
+> "For every user, we are hitting 24 requests. This is totally going to break our system." Correct: 10k users x 24 = a quarter-million DB calls just to load one page. That latency is what a cache eats, and it's the latency "nobody wants to wait" for.
 
-This is also the same lesson as the [functional vs non-functional requirements](03-functional-vs-nonfunctional-requirements.md) note: the system is fine at average load and drowns at **peak**. The 10x spike story? A cache is exactly what absorbs that spike — the same hot data gets served over and over to the crowd.
+This is the same point as the [functional vs non-functional requirements](03-functional-vs-nonfunctional-requirements.md) note: the system is fine at average load and drowns at **peak**. The 10x spike story? A cache is exactly what absorbs that spike — the same hot data gets served over and over to the crowd.
 
 ---
 
@@ -49,11 +49,11 @@ flowchart LR
 
 - **Latency** — a cache hit is a memory read (sub-millisecond); a DB hit is a disk/network trip. Users feel the difference on that homepage.
 - **Database load** — the DB stays focused on writes and cold data instead of serving the same 3 courses to 10,000 people. Under the 10x peak (see [the requirements note](03-functional-vs-nonfunctional-requirements.md)) the DB is usually the first thing to die — the cache shields it.
-- **Cost** — fewer DB machines doing fewer heavy queries means cheaper infra. It's one of the named fixes in the data-intensive bucket from the components video: "cache enhancement."
+- **Cost** — fewer DB machines doing fewer heavy queries means cheaper infra. It sits in the data-intensive bucket as one of the named fixes: "cache enhancement."
 
 ### Why the cache must stay SMALL
 
-Two reasons straight from the lecture:
+Two reasons:
 
 - The cache is fast *partly because* it only holds what's frequently used — keep it that way.
 - If the cache is ~ the size of the whole database, there is **no latency win at all** — you've just built a second database.
@@ -64,7 +64,7 @@ Two reasons straight from the lecture:
 
 ## Where caches live
 
-The taxonomy from the lecture is three tiers:
+The standard taxonomy has three tiers:
 
 - **Client-side cache** — on the device / in the web app (browser storage). Nothing leaves the user's machine.
 - **Server-side cache** — in the backend, the classic Redis-style store. This is where Twitter/X keeps its cache + timeline (that's the real-world note from the NoSQL section: Twitter -> Redis).
@@ -99,7 +99,7 @@ flowchart TD
 ```
 
 - **TTL — Time To Live**: how long a key-value pair is allowed to sit in the cache. When it expires, the pair is evicted and makes room.
-- **Why refresh at all?** Stale content. The lecture's example: the campaign sells a Java course today, an AI course tomorrow — the homepage must stop showing yesterday's hero course. TTL + eviction keeps the cache *current*.
+- **Why refresh at all?** Stale content. A classic example: the campaign sells a Java course today, an AI course tomorrow — the homepage must stop showing yesterday's hero course. TTL + eviction keeps the cache *current*.
 
 ### The staleness / consistency problem
 
@@ -109,7 +109,7 @@ This is the dark side of caching: an update lands in the database, but the cache
 
 ## The four cache strategies
 
-The lecture names exactly four, and here's how each one moves data:
+There are exactly four classical strategies, and here's how each one moves data:
 
 ### 1. Read-Through Cache (RTC)
 
@@ -153,12 +153,12 @@ The lecture names exactly four, and here's how each one moves data:
 
 ## Eviction policies — choosing what dies
 
-When the cache is full, something has to go. These five policies are the lecture's A-Z:
+When the cache is full, something has to go. These five policies are the A-Z:
 
 - **LRU — Least Recently Used**: evict whatever hasn't been touched in the longest time. Analogy: iPhone 17 Pro Max launches, everyone searches it; almost nobody searches iPhone 11 anymore -> 11 is stale, evict it.
 - **MRU — Most Recently Used**: evict the *most* recently used. Two examples given: (1) e-commerce — you've already applied your coupon, no need to keep it cached; (2) YouTube streaming — the segments you just watched are unlikely to be re-watched, drop them.
 - **LFU — Least Frequently Used**: evict by *frequency of access*. Example: your personal e-com history — "secondary screen" and "clothes" searches recur; the one-off "plant" search (spurred by a YouTube video) never repeats -> plant gets evicted first.
-- **FIFO — First In, First Out**: fixed-budget cache (lecture's example: **180 MB**). At capacity, evict the *first-inserted* entry, ignoring recency and frequency entirely.
+- **FIFO — First In, First Out**: fixed-budget cache (classic example: **180 MB**). At capacity, evict the *first-inserted* entry, ignoring recency and frequency entirely.
 - **LIFO — Last In, First Out**: stack semantics, last-in is evicted first; the first-inserted item lives longest. Same 180 MB budget example. (No application areas were given for FIFO/LIFO — left as homework for us.)
 
 > LRU is the one interviewers love. Have the iPhone example ready: search-trend data where the "old phone" is never searched again — out it goes.
@@ -167,20 +167,30 @@ When the cache is full, something has to go. These five policies are the lecture
 
 ## When the cache fails us
 
-The lecture's honest list of where this bites:
+The honest list of where this bites:
 
 - **Caching too much** — a cache the size of the DB is pointless; no latency win, all cost.
 - **Stale data after an update** — the campaign-sells-out example: cache keeps serving yesterday's hero course. Bounded by TTL, or by choosing the right strategy (write-through for "must be fresh").
 - **Write-back consistency** — the async DB update can silently lag or fail; you traded correctness for speed, so you must handle failures.
 - **Every miss costs more than no cache at all** — RTC's extra hop means a cold cache is *slower* than no cache. That's why a freshly deployed cache (or one that just flushed) takes a while to "warm up."
 
-The lecture doesn't over-engineer this part — the point is: cache is born to serve the *popular few*, and the moment you treat it like the source of truth, you're in trouble.
+That part is kept deliberately short — the point is: cache is born to serve the *popular few*, and the moment you treat it like the source of truth, you're in trouble.
+
+### Hazards that bite past the textbook
+
+- **Cache stampede / thundering herd** — a hot key's TTL expires and every waiting request misses at once, so the whole fleet slams the database simultaneously for the same value. Fixes: **jitter** the TTL (each replica expires at a slightly different instant) and **request coalescing / singleflight** — only one request fetches and repopulates while the rest wait on it.
+- **Write-around vs write-back, in Redis terms** — with write-around, the cache never sees the write at all: the app writes to the DB, and Redis fills itself only on a read miss (a `GET` miss path does the repopulation). With write-back, the cache *is* the write target: the client ACKs straight from Redis (`SET key value EX 60`) and a background worker later flushes to the DB — same speed, but now Redis holds state that a restart can lose, so pair write-back with Redis AOF/append-only persistence or a retrying flush worker.
+- **Cold starts** — right after deploy or a full flush the cache is empty and behaves like no cache at all (every read is an expensive miss). Standard play: pre-warm a known list of hot keys before real traffic arrives.
+
+### CDN edge caching
+
+A cache that sits *before* your backend: static homepage parts — thumbnail, CSS, JS, images — are served from edge servers near the user, so the browser may never touch your origin. The same TTL/eviction ideas apply one hop earlier: `Cache-Control` headers plus `stale-while-revalidate` let the edge refresh quietly instead of going dark. Dynamic sections still hit the backend, which is where the Redis-style cache earns its keep. The two caches form a layer cake — CDN in front, app cache behind — not rivals.
 
 ---
 
 ## The bigger picture — serial to parallel
 
-Caching delays the day you need to scale, but it isn't a replacement. The recap flow in the lecture: client (web/mobile) -> DNS (returns the server's address) -> server/backend code -> database -> response. The cache sits between code and DB, trimming DB traffic. But when a single server (the 128 GB box from the lecture — even with all that RAM the processes eat it) peaks out, you stop tuning the one box and go **multi-server** — and now the client can't choose, so DNS stops returning server IPs and starts returning the **load balancer's** IP. That's the next chapter: see [load balancing](10-load-balancing.md).
+Caching delays the day you need to scale, but it isn't a replacement. The recap flow: client (web/mobile) -> DNS (returns the server's address) -> server/backend code -> database -> response. The cache sits between code and DB, trimming DB traffic. But when a single server — the 128 GB box, even with all that RAM the processes eat it — peaks out, you stop tuning the one box and go **multi-server** — and now the client can't choose, so DNS stops returning server IPs and starts returning the **load balancer's** IP. That's the next chapter: see [load balancing](10-load-balancing.md).
 
 ```
   Client

@@ -6,9 +6,9 @@ Before drawing a single box, this is the fork in the road: is the system data-in
 
 ## The very first question
 
-- The anti-pattern the lecturer calls out: jumping straight into boxes — client, DB, cache, load balancer — **without understanding the app first**.
+- The anti-pattern to call out: jumping straight into boxes — client, DB, cache, load balancer — **without understanding the app first**.
 - > **First question before any solution:** *What is this application — data-intensive or compute-intensive?* Getting this right saves a lot of cost and steers the whole task correctly.
-- Setup he uses: two apps, same user count, same network, both facing **latency** (system taking time to respond).
+- Setup: two apps, same user count, same network, both facing **latency** (system taking time to respond).
 - Candidate fixes on the table:
   - add multiple databases
   - add caching layers / update caching mechanism
@@ -21,8 +21,8 @@ Before drawing a single box, this is the fork in the road: is the system data-in
 
 - **Definition:** core focus is **data** — store it, gather it, move it, keep updating it as new data arrives, write lots of it.
 - Calculation is *not* the focus; the job is just moving data DB -> client.
-- Bottlenecks live on **our side**, never the client: slow database response, bulky/inefficient network calls, low server configuration. ("We are not blaming the client to upgrade their CPU.")
-- Claim from the lecture: **most applications you work on are data-intensive** — hence all the talk about cache enhancement and sharding.
+- Bottlenecks live on **our side**, never the client: slow database response, bulky/inefficient network calls, low server configuration. (We're not blaming the client or telling them to upgrade their CPU.)
+- The well-known claim: **most applications you work on are data-intensive** — hence all the talk about cache enhancement and sharding.
 
 ### Instagram — the running example
 
@@ -73,7 +73,7 @@ Before drawing a single box, this is the fork in the road: is the system data-in
 
 - **Definition:** exactly the opposite of data-intensive — data retrieved from DB is **low**, but **calculations are heavy**.
 - Focus shifts away from DB / caching / replication / sharding -> onto **CPU and GPUs**. Systems are **compute-bounded** (CPU/GPU bound).
-- Examples from the lecture:
+- Typical examples:
   - image processing
   - heavy video rendering
   - ML model training / inference
@@ -123,10 +123,30 @@ flowchart TD
 
 ---
 
-## The trick — the lecturer's test
+## Capacity estimation, worked
+
+Practice until the arithmetic is reflexive: take the biggest number you're given, multiply by usage, divide by seconds in a day.
+
+- Feed example: **10M daily active users** each making **~20 requests a day** → 200M requests/day ÷ 86,400 ≈ **2,315 RPS** steady state. The architecture gets sized for the spike, not the mean — at a 3x sale-day peak that's ≈ **7,000 RPS**.
+- Storage math: 10M users × 10 KB of profile = ~100 GB base; with 3 replicas for durability ≈ **300 GB** just for account metadata. Replication multiplies cost on purpose.
+- Media is another league: 40M thumbnails × 500 KB ≈ **20 TB** → that's why images go to object storage/CDN and the DB keeps only a pointer.
+- Rule of thumb: if you can express the problem as "requests × payload moved", it's data-intensive; if you can express it as "CPU-seconds of work", it's compute-intensive.
+
+```
+DAU 10M x 20 req/user = 200M req/day
+                / 86,400 s
+                v
+        ~2,315 RPS steady      -> design for ~7,000 RPS at 3x peak
+        ~100 GB source data    -> x3 replicas = ~300 GB
+        40M media x 500 KB     -> 20 TB -> object storage + CDN
+```
+
+---
+
+## The trick — classify in one beat
 
 - > **If time is lost in data movement -> data-intensive. If time is lost in the computation itself -> compute-intensive.**
-- "This one distinction save you a lot of money time and complexity."
+- "This one distinction saves you a lot of money, time and complexity."
 - Practical loop:
   1. classify the issue (compute vs data)
   2. *then* pick components
@@ -151,6 +171,14 @@ request arrives
 ```
 
 - Wrong call in an interview (or production): pitching sharding and CDNs for a rendering job, or buying GPUs to serve an Instagram feed.
+
+## My classification ritual
+
+- Interview answer template I reuse: "First I'd classify the workload — data-intensive or compute-intensive. For X I'd call it data-intensive because the bottleneck is Y, and here's the number I'd estimate first."
+- Then name the resource you expect to spend on (databases/cache/CDN vs CPU/GPU), and draw just enough boxes to prove it — three components that fit beat ten that impress.
+- If a feature misfits the app's label (YouTube: serving videos vs recommending), split the answer per feature and say why the split changes the plan.
+
+> Whole note in one breath: where is the time lost — moving data, or computing on it? Everything else is practice at that one answer.
 
 ---
 

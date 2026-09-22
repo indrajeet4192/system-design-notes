@@ -1,6 +1,6 @@
 # Case study: designing a video streaming platform
 
-The capstone — we take every tool from this course and design a YouTube/Netflix-style streaming service, step by step, the way an interviewer would actually ask for it. This note is the full walkthrough: requirements, math, architecture, trade-offs. Interview gold if you can think it out loud.
+The capstone — we take every tool from these notes and design a YouTube/Netflix-style streaming service, step by step, the way an interviewer would actually ask for it. This note is the full walkthrough: requirements, math, architecture, trade-offs. Interview gold if you can think it out loud.
 
 ## The interview frame first
 
@@ -9,13 +9,13 @@ Before drawing boxes, the method (straight from [16 - designing a system in an i
 - **Think out loud.** State decisions specifically. "No one is looking for the perfect solution" — the interviewer wants to hear **tradeoffs** and **component choices**.
 - **Every component must earn its place.** Knowing all components does not mean using all of them — every component adds cost to the system.
 - **Requirements first, feature by feature.** For a Netflix-style prompt: pick the one feature the interviewer cares about, design that feature, then the next, then collect the findings into one system.
-- **Scope hard for the demo.** The lecture only designs how a video travels from server/source to client — login, reviews, ratings are explicitly ignored.
+- **Scope hard for the demo.** The design only covers how a video travels from server/source to client — login, reviews, ratings are explicitly ignored.
 
 > Interview point: you are being scored on reasoning, not a perfect diagram. A few cheap, justified components beat a kitchen-sink architecture every time.
 
 ---
 
-## What the lecture asks us to build
+## What we are building
 
 **Functional (as framed in the walkthrough):**
 
@@ -54,14 +54,14 @@ wait ~~~~~~~~~~~~▶                    play ▶  ▶  ▶   quality flexes live
 
 - Use **TCP** — image/video processing needs correct **sequence**, and TCP guarantees ordering.
 - Two protocols ride on top: **RTMP** (Real-Time Messaging Protocol) and **RTSP** (Real-Time Streaming Protocol).
-- Video is divided into **segments/chunks**; the client **pulls** segments one by one, paced by the network. The lecture explicitly says connect the dots to **pull vs push** in [message queues](13-message-queues.md) (noted for interviews!).
+- Video is divided into **segments/chunks**; the client **pulls** segments one by one, paced by the network. The dots connect deliberately to **pull vs push** in [message queues](13-message-queues.md) (noted for interviews!).
 - Benefits: **low latency**, no full download; some segments can be **pre-downloaded** so scrubbing feels instant.
 
 ---
 
 ## The resolution ladder
 
-- Rungs: **4K → HD / 1080p → 720p → 480p → 240p → 144p** (the lecture even floats 64p, unsure).
+- Rungs: **4K → HD / 1080p → 720p → 480p → 240p → 144p** (even 64p gets floated, unsure).
 - Size is content-dependent — same "1 hour of 4K" walks **2 GB → 4 GB (multi-cam) → 8 GB → 16 GB (outdoor/action sequence)**.
 - Per-second rates: **~0.57 MB/s** at 2 GB/hr vs **~4 MB/s** at 16 GB/hr — on a poor network that means **buffering**, and buffering means users quit.
 - Devices pick rungs: **watch → 480p; iPad → HD; mobile → HD; laptop → HD or 4K; TV → 4K, no compromise**.
@@ -78,7 +78,7 @@ Everything downstream splits into two flows (back to [data-intensive vs compute-
 
 ---
 
-## Capacity math (the lecture's worked numbers)
+## Capacity math (the worked numbers)
 
 Baseline storage:
 
@@ -95,24 +95,47 @@ The capstone example — streaming an entire match:
   - **720p = 8.3 MB**
   - **480p = 4.17 MB**
   - **240p = 2.08 MB**
-- One aligned second across **all** resolutions ≈ **72.65 MB** — the lecturer's reaction: *"too huge I feel — maybe divide into further segments."*
-- Users: **100 users → 87.5 GB → fits on a single server**. Push toward **100,000 users** (he also mentions 10,000) → one server insufficient → **split across more servers, add message queues, add caching**.
+- One aligned second across **all** resolutions ≈ **72.65 MB** — the reaction: *"too huge I feel — maybe divide into further segments."*
+- Users: **100 users → 87.5 GB → fits on a single server**. Push toward **100,000 users** (10,000 also appears in the math) → one server insufficient → **split across more servers, add message queues, add caching**.
+
+A sanity check that ties the numbers together: **50 GB over 20 minutes** = **400 Gb, over 1200 seconds ≈ 333 Mbps** — right in the neighborhood of the **300 Mbps** ABR ceiling used later. The math is self-consistent: the source bitrate literally sets the top rung of the ladder.
 
 > Interview point: do this math live on the whiteboard — segment count, per-quality sizes, then multiply by audience. That is the whole estimation drill.
 
 ---
 
+## ABR ladder: why every bitrate exists
+
+Each rung is not a different file — it's the **same 1-second segment transcoded into multiple bitrates**, and the set of all rungs for one second is the **72.65 MB** aligned bundle:
+
+- **The ladder is per segment, not per video.** The entire 20-minute match exists at 4K, 1080p, 720p, 480p, and 240p simultaneously; the client downloads only the next 1-second segment at whichever rung fits the network right now.
+- **Manifest + media segments.** Delivery pairs a tiny **manifest** (a playlist describing every rung and segment URL) with the **media segments** themselves. The client reads the manifest once, then fetches segments — that's how the player knows 480p of segment 12 exists before it asks for it.
+- **Bitrate rule of thumb:** a rung's bitrate ≈ **(segment size × 8 bits) / segment duration** — a 16.6 MB 1080p segment over 1 second is ≈ **133 Mbps**. Lower rungs shrink both size and network requirement proportionally.
+- **Segment duration is a tradeoff.** 1-second segments give the fastest reaction to network changes but multiply manifest/fetch overhead; the 4–10s segments common in DASH/HLS are kinder to the CDN at the cost of slower quality switches. For live content, short segments also mean less latency to the first frame.
+
+---
+
+## DASH vs HLS (the real-world spell-out)
+
+The generic "segments + ladder + pull" design maps onto the two formats you'll actually hear named:
+
+- **HLS (HTTP Live Streaming)** — Apple's format: the manifest is an **.m3u8 playlist**, segments are typically **.ts (MPEG-TS)** or fMP4 files, delivered over plain HTTP. Works natively on iOS/Safari and is effectively universal now.
+- **DASH (Dynamic Adaptive Streaming over HTTP)** — the MPEG standard: the manifest is an **.mpd** file, segments are fMP4, codec-independent. Preferred when you want vendor neutrality and cross-device consistency.
+- **Both do the same job this design does:** server-side ladder, client-side pull, manifest first. The ABR math (throughput vs bitrate) is protocol-agnostic. Neither needs RTMP/RTSP anymore — they all ride on HTTP + TCP, which is why the earlier protocol pair reads as legacy in production.
+
+---
+
 ## Upload path: segment, transcode, ship
 
-The lecture's final architecture, component by component:
+The final architecture, component by component:
 
 - **Server → CDN** holds the actual **source video**.
 - **Transformation service** cuts the source into **segments**.
-- **Priority message queue #1** carries the segmentation jobs. Why a *priority* queue? The lecturer's words: answer yourself — that's the interview prompt.
+- **Priority message queue #1** carries the segmentation jobs. Why a *priority* queue? Answer yourself — that's the interview prompt.
 - **Workers** — one worker per target quality: worker 1 transcodes down to HD, worker 2 to 720p, and so on.
 - **Priority message queue #2** holds the finished segmented results (again priority).
 - **Distributed / regional CDN** — India users hit the India server, US users hit the US server.
-- **Client** machine plays the video.
+- **Client** machine plays the segments.
 
 Optional, noted but not fully wired in: **caching** at CDN level or browser level to hold **upcoming segments** → [caching notes](09-caching.md).
 
@@ -137,11 +160,11 @@ This whole side is **compute-intensive**: transcoding runs once per upload acros
 
 ## Adaptive Bitrate: the client fights the network
 
-- Source video is split into segments, and **each segment is transcoded into multiple quality variants** — every second of the video exists at every rung.
+- Source video is split into segments, and **each segment is transcoded into multiple quality variants** — every second of a video exists at every rung.
 - The client **measures its throughput** while pulling segments and follows one rule:
   - **throughput > bitrate of the downloaded segment → switch quality UP**
   - **throughput < bitrate → switch quality DOWN**
-- The lecture's walkthrough — exactly how YouTube and other streamers behave:
+- The walkthrough — exactly how YouTube and other streamers behave:
 
 ```
 network:   300 Mbps       10 Mbps     300/150 Mbps     50 Mbps      300 Mbps
@@ -154,6 +177,18 @@ rule:  throughput < bitrate => DOWN        throughput > bitrate => UP
 
 - Client starts at **300 Mbps** → plays 4K segments 1-2; network drops to **10 Mbps** → pulls data at **480p**; network returns to **300/150 Mbps** → switches up to **1080p**; drops to **50 Mbps** → **720p**; restores to **300 Mbps** → final segment back to **4K**.
 - The quality picker (**auto / HD / 720p / 480p**) is just the UI over this — **"auto"** runs the orchestration.
+- Real-world players add **buffer-aware logic** on top of raw throughput: if the playout buffer is draining, downgrade preemptively; if it's full, stay or upgrade. Pure "throughput right now" decisions oscillate, so a little **hysteresis** (don't switch unless the headroom persists a few segments) keeps quality stable instead of flapping between rungs.
+
+---
+
+## CDN, edge caching, and origin shielding
+
+The CDN in this design is doing three distinct jobs, worth being able to talk about separately:
+
+- **Edge caching** — popular segments get copied to the edge near users, so a repeat viewer in India never touches the origin for the same segment again. The cache-miss path is the first serious latency hit: a miss means the edge fetches from origin, which is why the *second* viewer of a hot video is the one who pays for its popularity.
+- **Origin shielding** — edge caches sit *in front of* the origin so a herd of simultaneous misses (a "thundering herd" on a live match) collapses at the shield layer instead of hammering the source server. Same stampede-protection idea as the [cache](09-caching.md) note, applied at delivery scale.
+- **Regional distribution** — geo-routing: India users → India PoP, US users → US PoP. Combined with TCP ordering and pull pacing, a viewer mostly talks to a server a few hundred kilometers away — which is what makes **low first-frame latency** actually reachable.
+- **Cost shape:** storage is cheap, the *network path* is what you pay for — caching hot segments at the edge is not just a latency fix, it's the biggest cost reducer in the whole design.
 
 ---
 
@@ -161,7 +196,7 @@ rule:  throughput < bitrate => DOWN        throughput > bitrate => UP
 
 - The client pulls segments from the **nearest regional CDN** — India users → India server, US users → US server.
 - **CDN edge caching** for popular content plus **browser cache** for upcoming segments → fewer origin fetches, smoother scrubbing → [caching](09-caching.md).
-- Growth story from the math: at **100,000 users** a single server is out → **split across more servers**, add **message queues**, add **caching**. The earlier MQ lesson lands here: an MQ holds requests and hands them to servers — *"MQ does everything a load balancer does"* → [load balancing](10-load-balancing.md), [message queues](13-message-queues.md).
+- Growth story from the math: at **100,000 users** a single server is out → **split across more servers**, add **message queues**, add **caching**. The earlier MQ analysis lands here: an MQ holds requests and hands them to servers — *"MQ does everything a load balancer does"* → [load balancing](10-load-balancing.md), [message queues](13-message-queues.md).
 - Pull pacing and the queue-based job flow are the same pull/queue mechanics from [13 - message queues](13-message-queues.md).
 
 ```mermaid
@@ -175,11 +210,11 @@ flowchart LR
     A -->|lower| DN["Switch quality down"]
 ```
 
-What stays deliberately out of scope: the demo ends at the video path — **login, reviews, ratings ignored**. The rest of a full product (metadata store, replication, fault handling, monitoring — [SQL](07-sql-databases.md) / [NoSQL](08-nosql-databases.md), [replication & partitioning](11-replication-and-partitioning.md), [fault tolerance](14-fault-tolerance.md), [monitoring & observability](15-monitoring-and-observability.md)) belongs to the component lessons. Justify that scoping out loud in an interview: every component adds cost.
+What stays deliberately out of scope: the design ends at the delivery path (video server → client) — **login, reviews, ratings ignored**. The rest of a full product (metadata store, replication, fault handling, monitoring — [SQL](07-sql-databases.md) / [NoSQL](08-nosql-databases.md), [replication & partitioning](11-replication-and-partitioning.md), [fault tolerance](14-fault-tolerance.md), [monitoring & observability](15-monitoring-and-observability.md)) belongs to the component notes. Justify that scoping out loud in an interview: every component adds cost.
 
 ---
 
-## Trade-offs the lecture lands on
+## Trade-offs in the design
 
 - **What to cache:** upcoming segments — at the **CDN edge** and in the **browser** — so playback never waits on the origin.
 - **ABR vs fixed quality:** fixed 4K means ~4 MB/s bursts → buffering on bad networks → users leave; fixed low quality wastes good screens (a TV deserves 4K). ABR costs **pre-transcoded storage** — every aligned second across all rungs is ~72.65 MB, *"too huge"* — but keeps playback smooth at any bandwidth.

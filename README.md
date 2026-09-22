@@ -1,8 +1,8 @@
 # System Design Notes — Index
 
-My handwritten notes from the **Telusko System Design** series (Evan Reddi's intro, then trainer Akshay). I watched the lectures, turned each one into a dense notebook page, and put them all here so I can revise the whole course in one sitting. Each note ends with a **Quick revision** block and **Interview questions** — that's what I re-read the night before a loop.
+My handwritten study notes for system design interviews — each page is a dense notebook entry distilled from working through a system design course, ending with a **Quick revision** block and **Interview questions** for last-minute review.
 
-The course tells one story (Alien Bank grows from one cashier to a planet-scale system) and every fix we invent turns out to be a real system-design term. The notes follow that arc.
+The notes tell one story (Alien Bank grows from one cashier to a planet-scale system) and every fix we invent turns out to be a real system-design term. They follow that arc.
 
 ---
 
@@ -23,6 +23,17 @@ The course tells one story (Alien Bank grows from one cashier to a planet-scale 
                           ▼
  16 the interview playbook ──► 17 case study: video streaming
 ```
+
+## The core mental models
+
+- **Classify before you draw.** The first question on any problem is data-intensive vs compute-intensive ([02](notes/02-data-vs-compute-intensive.md)); every component you pick afterwards is either fixing data movement or fixing computation.
+- **Requirements before boxes.** Functional requirements say what the product must *do*; non-functional say *how well* — availability, latency, scale, security ([03](notes/03-functional-vs-nonfunctional-requirements.md)). Both decide the architecture you end up with.
+- **Every component answers a failure.** Load balancer: a dead or overloaded server. Database: unsynced copies or a lost write. Cache: hot reads hammering the DB. Queue: a burst of traffic or a slow downstream. Name the failure it prevents and the component justifies itself.
+- **Trade-offs beat checklists.** Availability vs consistency (CAP, [12](notes/12-cap-theorem.md)), consistency vs latency (replication and partitioning, [11](notes/11-replication-and-partitioning.md)), fresh vs cached ([09](notes/09-caching.md)). An answer that ends in a named trade-off reads as senior.
+- **Numbers beat adjectives.** 200 ms, 99.9% (≈ 5 min/day), 10x peaks, P90/P95/P99 — keep them at your fingertips so every design is grounded in a number, not a feeling.
+- **Design for the peak, budget for the average.** Capacity math tells you the steady-state RPS; the sale-day spike tells you the real spec. Both numbers belong in the first five minutes of the interview.
+
+---
 
 ## Foundations
 
@@ -54,7 +65,7 @@ The course tells one story (Alien Bank grows from one cashier to a planet-scale 
 ## The playbook
 
 - **[Designing a System Design Interview](notes/16-designing-a-system-interview.md)** — the structured approach: clarify requirements, estimate scale, outline components, drill into the hard part, then discuss trade-offs and follow-ups.
-- **[Case Study: Video Streaming Service](notes/17-case-study-video-streaming.md)** — the full walk-through end to end: global CDN, video segmentation (50GB / 1200 segments), ABR at up to 300Mbps, caching, and load distribution — a whole course compressed into one design.
+- **[Case Study: Video Streaming Service](notes/17-case-study-video-streaming.md)** — the full walk-through end to end: global CDN, video segmentation (50GB / 1200 segments), ABR at up to 300Mbps, caching, and load distribution — the whole arc of these notes compressed into one design.
 
 ---
 

@@ -1,7 +1,7 @@
 # SQL databases — tables, constraints, and relations
 
-The lecture finally lands on actual databases. Everything REST so far assumed the server
-just *remembers* things — this lesson is the fix: **SQL / relational databases**, laid out
+This note finally lands on actual databases. Everything REST so far assumed the server
+just *remembers* things — this note is the fix: **SQL / relational databases**, laid out
 as tables of rows and columns, glued together with keys and joins. Heavy on constraints
 ("force correct data entry") and on the four relationship shapes. Interview gold — I've
 been asked about primary keys and the many-to-many junction table in pretty much every
@@ -22,7 +22,7 @@ Client ──requests──▶ Server ──reads/writes──▶ Database (pers
                         └── restart! memory lost ── data still safe in the DB
 ```
 
-That "survives a restart" requirement is the whole point of this part of the course —
+That "survives a restart" requirement is the whole point of this part of the notes —
 the persistence story loops back to the big picture from [system design
 fundamentals](01-what-is-system-design.md).
 
@@ -36,11 +36,11 @@ fundamentals](01-what-is-system-design.md).
 - **NoSQL** is not one thing — it's an umbrella over several sub-models:
   **key-value, columnar, graph (nodes), document** stores. Software:
   **MongoDB, Cassandra**.
-- The lecturer's analogy that stuck with me:
+- The analogy that stuck with me:
   > "Saying SQL and NoSQL is like saying Java and No Java."
 
   Nobody knows what "not Java" is — same with NoSQL: it's a family, not a product.
-  The deep dive on those sub-models is the next lesson →
+  The deep dive on those sub-models is the next note →
   [NoSQL databases](08-nosql-databases.md).
 
 ---
@@ -67,7 +67,7 @@ users
   *many* records, so plural names feel "safer". Not a hard rule, just a convention.
 
 > Key takeaway: **fixed schema** is the SQL signature — you decide the columns and their
-> rules up front. NoSQL documents (next lesson) are the flexible alternative.
+> rules up front. NoSQL documents (next note) are the flexible alternative.
 
 ---
 
@@ -85,7 +85,7 @@ If garbage gets in, it poisons every query. Six constraints do the policing:
 - **PRIMARY KEY** — the unique identifier of a record; no two rows share it.
   `WHERE id = 3` returns exactly one row. It's also the value that gets *handed into
   other tables* — see FOREIGN KEY below.
-- **CHECK** — authenticity rules on a column. Examples from the lecture:
+- **CHECK** — authenticity rules on a column. Examples:
   - password length > 8
   - password must contain numeric values, maybe 1–2 special characters
   - phone number numeric only
@@ -108,9 +108,9 @@ authors                  posts
 ```
 
 - **DEFAULT** — fills in a value when the field isn't mandatory but null isn't
-  acceptable. Examples: free-subscription default; the learn.telusko.com LMS — most users
-  are students, so default `role = student/learner`; if someone gets hired at Telusko as a
-  trainer, the role is updated over time.
+  acceptable. Examples: free-subscription default; an ed-tech platform's LMS (say,
+  acme-learn.com) — most users are students, so default `role = student/learner`; if
+  someone gets hired at the company as an instructor, the role is updated over time.
 
 > Mnemonic I repeat out loud until it's muscle memory: **UNIQUE, NOT NULL, PRIMARY KEY,
 > CHECK, FOREIGN KEY, DEFAULT.**
@@ -119,8 +119,8 @@ authors                  posts
 
 ## Joins: associating tables
 
-A **join** = associating two tables / managing their relationship. The lecture walks the
-*shapes*:
+A **join** = associating two tables / managing their relationship. The walkthrough covers
+the *shapes*:
 
 ### One-to-many (and its mirror, many-to-one)
 
@@ -166,7 +166,7 @@ students               students_courses                      courses
 
 ## Quick aside: posts, comments, and sub-comments
 
-The lecture reworked the same idea into a cleaner picture (then got cut off):
+The same idea, reworked into a cleaner picture:
 
 - A `post` (id, content; content could be image / text / video).
 - Managing three sub-tables — `images`, `videos`, `text` — by **ID** is cleaner than one
@@ -174,7 +174,7 @@ The lecture reworked the same idea into a cleaner picture (then got cut off):
   `content`.
 - `comments` table: comment id + comment; supports **sub-comments via a parent comment
   ID** — the table references itself (self-referencing FK).
-- And comments obviously need a `users` table too (the lecture was cut mid-sentence here).
+- And comments obviously need a `users` table too.
 
 ```mermaid
 erDiagram
@@ -191,9 +191,51 @@ erDiagram
 
 ---
 
+## ACID, indexes, and the join variants
+
+### ACID in one line
+
+- **Atomicity, Consistency, Isolation, Durability** — the transaction guarantees that
+  make a database safe to reason about: **Atomicity** (a transaction all happens or none
+  of it does), **Consistency** (valid before and after — constraints always hold),
+  **Isolation** (concurrent transactions don't see each other's half-finished writes),
+  **Durability** (once committed the write survives a crash — the "survives a restart"
+  promise from the top of this note, made official).
+- Where it matters: the classic money-transfer — deduct from one account, credit another;
+  if the second step fails, Atomicity rolls both back so no balance vanishes.
+
+### Indexes — why lookups stay fast
+
+- An **index** is a separate structure that lets the database find rows without scanning
+  the whole table. The default in PostgreSQL/MySQL is the **B-tree** — sorted, balanced,
+  and cheap for ranges (`WHERE age > 21`) and `ORDER BY`.
+- **Unique index** — enforces uniqueness (same guarantee as the UNIQUE constraint) and
+  accelerates equality lookups, so `WHERE username = 'ak'` hits the index directly.
+- **Composite index** — indexes multiple columns as one key in column order: an index on
+  `(school_id, created_at)` makes "all records from this school, newest first" fast.
+  Order matters — a query that matches the leading column uses it; one that skips it
+  mostly doesn't.
+- The cost of every index: extra write time and storage per insert/update, since the
+  index must be maintained — so index what you query, not everything.
+
+### INNER, LEFT, RIGHT — the three join flavours you'll be asked to name
+
+- **INNER JOIN** — only rows that match on **both** sides: a user with no blogs, and a
+  blog with no author, vanish from the result.
+- **LEFT JOIN** — every row from the **left (first)** table, plus matches from the right;
+  unmatched right columns come back as **NULL** — "all students, with their enrolled
+  courses, even those enrolled in nothing."
+- **RIGHT JOIN** — the mirror: all rows from the right table, left is optional. Most
+  people just flip the tables and use LEFT, which is why RIGHT is the interview trivia
+  line.
+- Small enough to keep straight: **INNER = intersection, LEFT = keep everything on the
+  left, RIGHT = keep everything on the right.**
+
+---
+
 ## When to reach for SQL
 
-Tying it together from the lecture's own framing — pick SQL / relational when:
+Tying it together — pick SQL / relational when:
 
 - Your data is **naturally tabular** — entities with fixed attributes (rows + columns),
   structure decided up front.
@@ -201,8 +243,8 @@ Tying it together from the lecture's own framing — pick SQL / relational when:
 - You need **integrity on every entry** — constraints exist precisely because "every wrong
   data is of no use"; strong validation is a feature, not a burden.
 
-(One honest note: this lesson stops at joins. Transactions and ACID guarantees get their
-own moment later in the course — nothing here is about money-transfer atomicity yet.)
+(One honest note: this note stops at joins. Transactions and ACID get their own moment
+later — nothing here is about money-transfer atomicity yet.)
 
 ```mermaid
 flowchart TD
@@ -228,7 +270,8 @@ flowchart TD
   the two without duplicating data.
 - Joins come in four shapes: **one-to-many / many-to-one** (a user → many blogs),
   **many-to-many** (junction table like `students_courses`), **one-to-one** (slim
-  `contents` catalog pointing at type-specific detail tables).
+  `contents` catalog pointing at type-specific detail tables) — and the variants
+  **INNER / LEFT / RIGHT** differ by which side's unmatched rows survive.
 - Heavy `contents` table with a `type` column = bad scan-everything design; split by type
   and link by ID = better.
 - Pick SQL when data is structured/relational and integrity matters.

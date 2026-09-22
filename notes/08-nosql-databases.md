@@ -1,6 +1,6 @@
 # NoSQL — "Not Only SQL"
 
-Notes from the lecture that follows the SQL deep-dive from [07-sql-databases](07-sql-databases.md).
+This note follows the SQL deep-dive from [07-sql-databases](07-sql-databases.md).
 This one covers what NoSQL actually means, *why* it had to exist, the **four families**
 (key-value, column-family, graph, document), and the honest trade-offs when you pick it.
 Interview gold — the "which do I choose and why" answer comes straight from here.
@@ -9,7 +9,7 @@ Interview gold — the "which do I choose and why" answer comes straight from he
 
 Recap from the SQL video: relational databases kept data in **tables = entities**, linked
 rows using **primary and foreign keys**, and we fetched across those links with **joins**.
-Siblings are PostgreSQL, MySQL. Solid, but the lecture's point was: the moment your app
+Siblings are PostgreSQL, MySQL. Solid, but the point was: the moment your app
 grows, the relational model starts asking questions.
 
 - Even a *small* blog site (posts + comments + users) already needs roughly **4-6 tables**
@@ -45,7 +45,7 @@ No Java."** You can't contrast Java with "not Java" — that's not a thing. Same
 
 ## Why NoSQL exists — the three pushes
 
-The lecture framed it as three things SQL genuinely struggles with:
+SQL genuinely struggles with three things:
 
 1. **Scale** — millions of users, massive read/write loads. One shared relational store
    behind the whole planet (Amazon, Twitter, Netflix-sized traffic) stops being enough.
@@ -54,8 +54,7 @@ The lecture framed it as three things SQL genuinely struggles with:
 3. **Few or no relationships** — many entities "stand on their own"; you don't need a
    graph of foreign keys to store a user profile or a tweet.
 
-Each of the three pushes maps to a NoSQL advantage, which is how the lecture ordered it —
-let's take them one by one.
+Each of the three pushes maps to a NoSQL advantage, so let's take them one by one.
 
 ## Advantage #1 — easy scaling (vertical vs horizontal)
 
@@ -85,13 +84,12 @@ is no secret third door.
 NoSQL advantage: **easy to scale both ways.** Because a document/record carries its own
 full context (no foreign keys pointing to distant tables), you can replicate the whole
 thing onto another server or split it across partitions without untangling a web of
-joins. (Replication and partitioning get their own videos — the lecture just previews them
-here.)
+joins. (Replication and partitioning get their own notes — only previewed here.)
 
 ## Advantage #2 — schemaless
 
 SQL's fixed-column problem, from the SQL video: you can't keep adding or removing column
-types to fit data it wasn't designed for. The lecture's worked example is one `content`
+types to fit data it wasn't designed for. A classic worked example: one `content`
 collection holding three wildly different documents:
 
 ```ascii
@@ -114,14 +112,14 @@ Same collection. Different fields, different field counts, same collection.
 
 ## Advantage #3 — few or no relationships
 
-Entities "stand on their own." The lecture put it in key-value terms: the same key can
+Entities "stand on their own." Put in key-value terms: the same key can
 carry four completely different value shapes.
 
 ```ascii
 key: "courseID"  ->  "Master Java"                              just a name
 key: "courseID"  ->  { name, price, instructor }                an object
-key: "courseID"  ->  { ...course, lessons: [ l1, l2, l3 ] }     nested lessons
-key: "courseID"  ->  { ...lessons, } + comments inside lessons  comments inside lessons
+key: "courseID"  ->  { ...course, modules: [ m1, m2, m3 ] }       nested modules
+key: "courseID"  ->  { ...modules, } + comments inside modules     comments inside modules
 ```
 
 - One key pattern, four structures, zero foreign keys needed.
@@ -147,13 +145,13 @@ flowchart TD
   string, a number, a blob, a byte array, an array, an object, nested objects, combos.
 - **Schemaless, no relationships** by design.
 - Ubiquitous — front-end and back-end it shows up everywhere: **cache, cookies, sessions,
-  plain data storage**. The lecture's example: key `post1` maps to a value holding
+  plain data storage**. A canonical example: key `post1` maps to a value holding
   `postId`, `content`, and a `comments` array of `{ commentId, content }` objects.
 - Real-world anchor: **Twitter/X uses Redis for caching and its timeline.**
 
 ### Family 2 — Column-family (columnar) stores (Cassandra)
 
-- Setup from the lecture: a student table `(ID, name, marks)` with rows `(1, Aka, 90)`,
+- Setup: a student table `(ID, name, marks)` with rows `(1, Aka, 90)`,
   `(2, Goro, 95)`; your task is *the class average*.
 - **SQL reads row-wise** — left to right — so a marks-average query reads `name` too. With
   3 columns that's trivial; with 17 columns it's wasteful.
@@ -170,7 +168,7 @@ flowchart TD
 
 ### Family 3 — Graph databases (Neo4j)
 
-- The lecture's analogy: detective movies. Photos pinned on a wall, joined by threads.
+- The go-to analogy: detective movies. Photos pinned on a wall, joined by threads.
   **Photos = nodes, threads = edges.**
 - **Nodes are entities; edges are relationships.** Both can carry properties.
 - Example: a `student` node and a `course` node joined by an `enrolled` relationship that
@@ -180,7 +178,7 @@ flowchart TD
   scale — anything where the *connections* are the point, not just the records.
 - Query languages mentioned: **Gremlin, SPARQL, Cypher** (Cypher is the Neo4j query
   language).
-- Honest downside from the lecture: **complex, and a bit slow** when you have many entities
+- Honest downside: **complex, and a bit slow** when you have many entities
   plus relationship properties to walk.
 
 ### Family 4 — Document databases (MongoDB)
@@ -192,12 +190,12 @@ flowchart TD
 - Natural fits: **logging** (log line shapes keep changing), **profiles** (users fill
   different subsets of fields), and **content** — Instagram/Facebook posts live as one
   document in one collection.
-- The lecture flagged **GraphQL as a "borderline exception"** — it *does* express
+- **GraphQL** gets flagged as a "borderline exception" — it *does* express
   relationships and relationship properties while staying broadly under the NoSQL umbrella.
 
 ## Who uses what — the adoption map
 
-The lecture's real-world list is the quickest way to remember each family:
+The real-world list is the quickest way to remember each family:
 
 - **Netflix → Apache Cassandra** (user activities)
 - **Amazon → DynamoDB** (scaling their application)
@@ -211,9 +209,22 @@ The lecture's real-world list is the quickest way to remember each family:
    Redis      <--  Twitter/X
 ```
 
+## The four families, side by side
+
+A compact cheat-sheet to distinguish them fast — model, what it optimizes, one product:
+
+- **Key-value (Redis)** — the dumbest model, fastest single-record lookups; the value is opaque to the store (whatever bytes you put there). Perfect for sessions, feature flags, rate-limiter counters, hot caches.
+- **Document (MongoDB, CouchDB)** — keyed like a KV store, but the store *understands* the JSON-ish value, so you can query and index inside the document. The sweet spot for app data that was never neatly tabular.
+- **Column-family (Cassandra, HBase, Bigtable)** — physically groups each column, so an aggregate like "average marks" reads only the `marks` column, not whole rows. Fat on analytical reads, thinner on writes.
+- **Graph (Neo4j)** — rows are nodes and edges; the model *is* the relationship. Best when the question is "how is A connected to B", weakest when you just want a profile by ID.
+
+**Document vs relational for an order:** an order is a great relational citizen — it has a parent (the customer), children (line items), a payment, a shipping address — and you query it by order-id with a few joins. Keep that in SQL. Where a document shines is the opposite shape: an entity that *owns* nested structure nobody else joins on — a user profile, a blog post with comments, a log line. Rule of thumb: if a record is read as one unit end-to-end and cross-referenced by others rarely, one document beats five joined tables.
+
+> Real systems rarely stay monogamous — this has a name, **polyglot persistence**: relational for orders/accounts, Redis for the hot cache and sessions, Cassandra for the analytics column, Neo4j for the friend graph, MongoDB for the flexible content. The right question isn't "which database?" but "which database *for this data*?"
+
 ## SQL vs NoSQL — the decision framework
 
-The lecture gave the cleaner one-liner I've seen on this topic: pick based on what you can
+The cleanest one-liner on this topic: pick based on what you can
 afford to de-prioritize.
 
 > **"Whenever consistency is on more priority than availability, we can easily pick SQL.
@@ -235,7 +246,7 @@ flowchart LR
     N --> DOC[Document / MongoDB]
 ```
 
-The comparison boiled down to the lecture's terms:
+The comparison boils down to this:
 
 - **Structured, fixed schema** vs **flexible / schemaless**.
 - **Vertical scaling** (and very hard horizontal) vs **easy horizontal scale-out**.

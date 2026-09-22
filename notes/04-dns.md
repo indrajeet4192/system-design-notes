@@ -1,16 +1,16 @@
 # DNS — the phonebook of the Internet
 
-How does a browser know which server to hit for telusko.com — a name or an IP? Humans remember names, machines only speak IP addresses, and DNS is the quiet translator in between. It sits right after the components preview in [What is System Design?](./01-what-is-system-design.md), and interviews love asking how a lookup walks the chain — so this note is that walkthrough, end to end.
+How does a browser know which server to hit for mystore.com — a name or an IP? Humans remember names, machines only speak IP addresses, and DNS is the quiet translator in between. It sits right after the components preview in [What is System Design?](./01-what-is-system-design.md), and interviews love asking how a lookup walks the chain — so this note is that walkthrough, end to end.
 
 ## Names vs numbers
 
-- Hook question from the lecture: "How does a browser know which web page to hit? By domain name or IP addresses?"
+- Starting question: "How does a browser know which web page to hit? By domain name or IP addresses?"
 - **DNS = Domain Name System** — the phonebook of the Internet: it maps **domain names to IP addresses**.
-- The core gap, in the lecturer's words: **"Humans communicate through names but systems don't communicate through names."** That single sentence is why DNS exists.
-- Vocabulary from the lecture:
-  - **Domain** — telusko.com, google.com, facebook.com.
+- The core gap in one line: **"Humans communicate through names but systems don't communicate through names."** That single sentence is why DNS exists.
+- Core vocabulary:
+  - **Domain** — mystore.com, google.com, facebook.com.
   - **TLD (top-level domain)** — the tail segment: .com, .net, .gov, .in, .uk, .us, .edu.
-  - **Subdomain** — docs.telusko.com, courses.telusko.com; the main domain acts as an umbrella over them.
+  - **Subdomain** — docs.mystore.com, courses.mystore.com; the main domain acts as an umbrella over them.
 - **Why the TLD is the routing key** — the root server's whole map is TLDs: .com queries go to the .com server, .in queries to the .in server. The lookup peels the name apart one level at a time.
 - **Subdomains aren't separate domains** — docs. and courses. are entries under the same umbrella, which is why they later share a single **zone** (see the last section).
 
@@ -26,7 +26,7 @@ Two "obvious" fixes, both dead ends — this is exactly why DNS had to become a 
   - massive storage on every machine;
   - a heavier browser;
   - a performance hit for every user, forever.
-- Worse, IPs are not stable. Lecture story: a domain was bought on **GoDaddy**, later moved to **Google Domains**, and the IP behind the name changed with it. If browsers held the list, you'd have to update every browser in the world.
+- Worse, IPs are not stable. Real example: a domain was bought on **GoDaddy**, later moved to **Google Domains**, and the IP behind the name changed with it. If browsers held the list, you'd have to update every browser in the world.
 
 ### Fix 2: one central server holding the whole table
 
@@ -34,7 +34,7 @@ Two "obvious" fixes, both dead ends — this is exactly why DNS had to become a 
 - Blast radius: every device online would ask that same box for every name lookup — one copy, no side door, nothing else to fall back on.
 - If that box breaks, "the entire internet will break" — not one site, all of them, because no browser could translate any name into an address anymore.
 
-### The lesson both failures teach
+### What both failures teach
 
 - Fix 1 fails by copying the mapping to the edge (every browser in the world); Fix 2 fails by concentrating it in the middle (one server for the world).
 - DNS does the opposite of both: a distributed set of small, specialized servers — nobody stores the whole table, and no single box holds the internet's fate.
@@ -57,24 +57,23 @@ sequenceDiagram
     participant TLD as TLD server (.com)
     participant Auth as Authoritative name server
     participant Site as Website server
-
-    B->>R: Resolve telusko.com
+    B->>R: Resolve mystore.com
     R->>Root: Which TLD server handles .com?
     Root-->>R: TLD server IP
-    R->>TLD: Which name server owns telusko.com?
+    R->>TLD: Which name server owns mystore.com?
     TLD-->>R: Authoritative name server IP
-    R->>Auth: IP address for telusko.com?
+    R->>Auth: IP address for mystore.com?
     Auth-->>R: Real IP (e.g. 1.2.3.4)
     R-->>B: Answer (now cached)
     B->>Site: HTTP request to that IP
     Site-->>B: Web page
 ```
 
-Walk it the way the lecturer did — end-to-end trace of typing **telusko.com**, narrating what each hop knows and doesn't know:
+Walk it end to end — a trace of typing **mystore.com**, narrating what each hop knows and doesn't know:
 
 1. **Machine → ISP (or router) → DNS resolver.** All the browser holds is the name I typed — no IP yet — so the resolver takes over the quest.
-2. **Resolver → root server.** Root flat-out doesn't know telusko.com's IP; roots never store individual site records. What it *does* know is TLDs, so it answers "ask the .com TLD server" and hands over that server's IP.
-3. **Root → .com TLD server.** Resolver now asks: "who is authoritative for telusko.com?" The TLD still won't give the final IP — it returns the **authoritative name server's** IP instead.
+2. **Resolver → root server.** Root flat-out doesn't know mystore.com's IP; roots never store individual site records. What it *does* know is TLDs, so it answers "ask the .com TLD server" and hands over that server's IP.
+3. **Root → .com TLD server.** Resolver now asks: "who is authoritative for mystore.com?" The TLD still won't give the final IP — it returns the **authoritative name server's** IP instead.
 4. **TLD → authoritative name server.** One question left. This server owns the records for the domain, so it finally returns the site's **real IP** (say, 1.2.3.4).
 5. **Resolver → browser.** The answer is handed back — and the resolver has stored it for next time.
 6. **Browser → site server directly.** HTTP call to that IP; the web page comes back. DNS is done.
@@ -85,17 +84,17 @@ The pattern worth memorizing: **root knows TLDs, TLD knows name servers, authori
 
 - Nobody in the world holds the full 350M-row table: roots map only TLDs, each TLD tracks only the name servers for its extension, each authoritative server owns only its own zone.
 - Authority is sliced by ownership instead of stacked on one machine — the single-point-of-failure disaster from Fix 2 structurally can't happen here.
-- The **authoritative name server** is the only hop that truly *knows* telusko.com; everything above it is just a referral directory pointing at who to ask next.
+- The **authoritative name server** is the only hop that truly *knows* mystore.com; everything above it is just a referral directory pointing at who to ask next.
 
 ```mermaid
 flowchart LR
-    A["telusko.com"] --> B["Root: knows TLDs"]
+    A["mystore.com"] --> B["Root: knows TLDs"]
     B --> C[".com TLD: knows name servers"]
     C --> D["Authoritative: knows the IP"]
     D --> E["1.2.3.4"]
 ```
 
-Reiteration from the lecture (he walks the chain twice on purpose): resolver → root (which TLD?) → TLD (which name server?) → authoritative (final IP) → fetch the page.
+Reading the chain twice is the trick that locks it in: resolver → root (which TLD?) → TLD (which name server?) → authoritative (final IP) → fetch the page.
 
 Finding the address is only half the job — once the browser has the IP, the actual conversation with the server happens over [APIs](./05-apis.md), the next note.
 
@@ -149,13 +148,30 @@ warm visit:    browser → OS → resolver   (stops at the first cache hit)
 
 ## Zones & registrars
 
-- **Registrar** — where you register a domain name: GoDaddy, Hostinger. You buy telusko.com there, and zone settings are configured at the registrar.
+- **Registrar** — where you register a domain name: GoDaddy, Hostinger. You buy mystore.com there, and zone settings are configured at the registrar.
 - Configuring the zone at the registrar is what actually wires things up: it arranges which authoritative name server will speak for your domain and what records live under it — the apex name plus every subdomain entry.
-- **Zone** — the set of records the **authoritative name server** holds for a name. Subdomains create entries inside the zone: the telusko zone holds telusko.com plus the docs. and courses. subdomains.
-- Why they share one zone: docs.telusko.com and courses.telusko.com aren't separate purchases — they hang under the same umbrella domain, so the same authoritative server (the same zone) answers the final hop for all three names. There's no separate registrar setup for docs.; it's just another entry in the same zone.
+- **Zone** — the set of records the **authoritative name server** holds for a name. Subdomains create entries inside the zone: the mystore zone holds mystore.com plus the docs. and courses. subdomains.
+- Why they share one zone: docs.mystore.com and courses.mystore.com aren't separate purchases — they hang under the same umbrella domain, so the same authoritative server (the same zone) answers the final hop for all three names. There's no separate registrar setup for docs.; it's just another entry in the same zone.
 - Earlier hops never touch your zone directly: root and TLD only ever point the resolver *toward* it — the zone gets contacted exactly once, at the final step of the chain.
 - The registrar itself never sits in the lookup chain: once it has registered the name and holds your zone config, lookups only ever touch root → TLD → your authoritative server.
 - Division of ownership, put simply: the registrar is who sold you the name; the zone on the authoritative name server is who actually answers "what's the IP?" for you and your subdomains. The lookup chain always ends at that zone.
+
+---
+
+## Record types, and the TTL that keeps caches honest
+
+The zone on the authoritative server isn't one row per domain — it's a set of **typed records**, each answering a different question:
+
+- **A** — name → IPv4 address (the classic lookup most people mean by a DNS record).
+- **AAAA** — the same job for **IPv6** (quad-A).
+- **CNAME** — a *canonical alias*: `www.mystore.com` → `mystore.com`, so a name inherits another name's records instead of duplicating them.
+- **MX** — **mail exchange**: where `@mystore.com` email should be delivered.
+- **TXT** — arbitrary text: SPF/DMARC email validation, `_acme-challenge` proofs, domain verification strings.
+- **NS** — **name server**: which authoritative server holds this zone — the exact pointer a TLD lookup returns.
+- **SOA** — **Start of Authority**: the zone's master record (primary NS plus refresh/retry/expiry timings) that defines the whole zone.
+- Every record carries a **TTL (Time To Live)** in seconds — how long any cache (browser, OS, ISP resolver) may treat its answer as fresh.
+- **TTL is a freshness-vs-traffic trade-off**: a short TTL (60s) propagates IP changes fast but re-queries constantly; a long one (86400 = one day) is cheap but keeps stale answers alive longer.
+- Interview tie-in: "the site changed DNS but still hits the old server" is almost always a long TTL expiring — `dig` shows the remaining TTL on the record so you can predict when the flip completes.
 
 ---
 
@@ -166,11 +182,11 @@ warm visit:    browser → OS → resolver   (stops at the first cache hit)
 - Chain: resolver → root (which TLD?) → TLD (which name server?) → authoritative (final IP) → browser fetches the page directly.
 - 13 root servers A–M are logical identities with many replicas each, run by ~30 organizations — not 13 physical machines.
 - Full lookup happens only the first time; after that, cache at the resolver (ISP), the operating system, or the browser answers.
-- TLDs are the tails (.com, .net, .gov, .in, .uk, .edu); subdomains like docs.telusko.com hang off the main domain.
-- Registrar registers the name (GoDaddy, Hostinger); the zone lives on the authoritative name server.
+- TLDs are the tails (.com, .net, .gov, .in, .uk, .edu); subdomains like docs.mystore.com hang off the main domain.
+- Registrar registers the name (GoDaddy, Hostinger); the zone lives on the authoritative name server and holds typed records (**A, AAAA, CNAME, MX, TXT, NS, SOA**), each with a **TTL** that decides how long caches may keep the answer.
 
 ## Interview questions
 
-1. Walk me through what happens from the moment I type telusko.com in a browser until the page loads — which DNS servers get involved, and what does each one answer?
+1. Walk me through what happens from the moment I type mystore.com in a browser until the page loads — which DNS servers get involved, and what does each one answer?
 2. Why can't we keep a single central server — or an in-browser table — mapping every domain to its IP address?
 3. What is the difference between a root server, a TLD server, and an authoritative name server? Where do caching and zones fit into that picture?

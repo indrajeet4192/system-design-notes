@@ -8,10 +8,12 @@ This note covers the **CAP theorem** — Consistency, Availability, Partition to
 
 Distributed system = multiple nodes/data centers holding copies of the same data (built on top of [replication and partitioning](11-replication-and-partitioning.md)). We want three things from it:
 
-- **Consistency** — *every read gets the latest write.* Every user sees the same, freshest information. Lecture's phrasing: "providing latest information to every user."
+- **Consistency** — *every read gets the latest write.* Every user sees the same, freshest information. One clean definition: "providing the latest information to every user."
   - Example: an update lands on partition/node P1; it takes time to propagate to P2. A reader hitting P2 during that window must **not** see old data — the system shows "system is loading" until P2 catches up. We traded availability for consistency.
 - **Availability** — *every request gets a response.* No matter which node you ask, you get an answer — even if that answer is slightly stale. During the same propagation window: no loading icon, user just gets the older data served back.
 - **Partition tolerance** — *the system keeps working when nodes lose network contact.* The network of linked nodes is completely broken (a cut cable, a dead data center link, a switch melting). Two options once the partition hits: wait to fix the connection then update, or keep serving (but the lagging side is stale).
+
+One word of caution before the corner-diagram: **"consistency" here means *linearizability*** — every read sees the most recent acknowledged write — which is much tighter than *eventual consistency*, and the two get blurred constantly. CAP's C is the strong kind; eventual consistency is exactly what AP systems promise *instead*, plus the reconciling machinery from the [replication and partitioning](11-replication-and-partitioning.md) note. When an interviewer says "your system is consistent," always clarify which flavour they mean.
 
 ASCII sketch of the propagation window that makes C and A fight:
 
@@ -35,29 +37,29 @@ ASCII sketch of the propagation window that makes C and A fight:
 The classic way I sketch the three corners in my notebook:
 
 ```
-                 Consistency
-                (latest write
-                 to everyone)
-                    /    \
-                   /      \
-                  /  pick  \
-                 /   only   \
-                /    two     \
-               /______  ______\
-              /   CA   \/   CP  \
-             /                    \
-   Availability ------------ Partition tolerance
-  (always respond)        (survive broken links)
-        \
-         \-- the AP corner lives down here:
-             always respond, even when stale
+                Consistency
+               (latest write
+                to everyone)
+                   /    \
+                  /      \
+                 /  pick  \
+                /   only   \
+               /    two     \
+              /______  ______\
+             /   CA   \/   CP  \
+            /                    \
+  Availability ------------ Partition tolerance
+ (always respond)        (survive broken links)
+       \
+        \-- the AP corner lives down here:
+            always respond, even when stale
 ```
 
 ---
 
 ## The core claim — only two of three
 
-The theorem's blunt line from the lecture: **"you can only provide two of these three variables."**
+The theorem's blunt claim: **"you can only provide two of these three variables."**
 
 Pick any two, lose the third:
 
@@ -65,7 +67,7 @@ Pick any two, lose the third:
 - **CP** — Consistent + Partition-tolerant: when the link breaks, refuse or delay responses on the stale side until it has the latest data. You lose availability.
 - **AP** — Available + Partition-tolerant: when the link breaks, keep answering — with stale data. You lose consistency (temporarily).
 
-The choice flowchart the whole lecture hangs on:
+The choice flowchart the whole topic hangs on:
 
 ```mermaid
 flowchart TD
@@ -78,7 +80,7 @@ flowchart TD
 
 ### Why Partition tolerance is not negotiable
 
-Here is the twist the lecture insists on: in a distributed system, **partitions WILL happen**. Nodes are linked over a real network; networks fail. You cannot choose to "not have partition tolerance" and still call the system distributed — refusing to handle a partition *is* handling it badly.
+Here is the twist that makes this concrete: in a distributed system, **partitions WILL happen**. Nodes are linked over a real network; networks fail. You cannot choose to "not have partition tolerance" and still call the system distributed — refusing to handle a partition *is* handling it badly.
 
 So the CA row of the theorem is a mirage at scale. Quote from the notes: with two data centers, during propagation you must either show data (break C) or wait (break A). At scale, **"we don't have an option to pick CA."**
 
@@ -117,7 +119,7 @@ What the user actually feels on the stale side of the partition:
 - and if neither is possible yet → request fails / "try again later".
 - Correctness is never traded. Silence is acceptable. Wrong data is not.
 
-**Example — banking / ledgers:** you send ₹100; the receiver must wait until the transaction is actually processed and the ledger updated everywhere it matters. Serving "you received ₹100" before the write is durable would be a *blunder* — money stories from lecture one all over again. A bank that answers fast but inconsistently loses trust (and money).
+**Example — banking / ledgers:** you send ₹100; the receiver must wait until the transaction is actually processed and the ledger updated everywhere it matters. Serving "you received ₹100" before the write is durable would be a *blunder* — money stories from note one all over again. A bank that answers fast but inconsistently loses trust (and money).
 
 ### AP — Availability + Partition tolerance
 
@@ -161,7 +163,7 @@ flowchart LR
 
 ### CA — the small-system escape hatch
 
-The lecture is blunt: **CA = every small application / single data.** One database, one node, nothing to partition — of course you can have consistency and availability. It's not a strategy, it's the default of not-yet-distributed. Once you add a second data center for scale or fault-tolerance, CA evaporates and you're on the CP/AP line.
+The blunt take: **CA = every small application / single database.** One database, one node, nothing to partition — of course you can have consistency and availability. It's not a strategy, it's the default of not-yet-distributed. Once you add a second data center for scale or fault-tolerance, CA evaporates and you're on the CP/AP line.
 
 Why two data centers kill CA — the argument step by step:
 
@@ -196,7 +198,7 @@ AP doesn't mean "wrong forever." The lagging node holds stale data *until the pa
 
 ## Where CAP meets SQL vs NoSQL
 
-This is exactly where the lecture parks it — no deeper, no invented taxonomy:
+A clean place to park this — no deeper, no invented taxonomy:
 
 - A **single SQL database** (see [SQL databases](07-sql-databases.md)) for a small app is effectively CA territory: one node, no partition in play, reads always see the last write. Great — until you need more than one node.
 - The moment we shard/replicate for scale — which is the entire pitch of [NoSQL databases](08-nosql-databases.md) — **CA is off the table**. Now every design decision is CP or AP:
@@ -216,15 +218,52 @@ This is exactly where the lecture parks it — no deeper, no invented taxonomy:
 
 ---
 
+## The systems that actually ship — real CP/AP defaults
+
+Straight from the tooling we'd actually reach for:
+
+- **ZooKeeper / etcd** — CP by design. The minority side of a partition refuses writes; a quorum of nodes (more than n/2) must agree before anything commits — no quorum, no writes. Perfect for leader election and coordination state.
+- **Cassandra / DynamoDB** — AP by default. Any node accepts reads and writes right now and reconciles with its peers afterwards (gossip, LWW/vector clocks). That is the leaderless-replication family from note 11: majority reads/writes + conflict resolution instead of a single source of truth.
+- **MongoDB** — AP-flavoured out of the box: reads can hit secondaries that are behind the primary. Turn on majority write concern + linearizable reads and it degrades to CP for the strict majority window.
+- **Redis (single node)** — no partition exists, so it's effectively CA; as soon as you add Sentinel/Cluster failover it joins the CP/AP line like everyone else.
+- The pattern hiding in the columns: **most systems are configurable**, and the knob is the consistency level you choose per operation (QUORUM vs ONE in Cassandra, majority write concern in MongoDB). "Is it CP or AP?" is often answered with "it depends on the consistency level you ask for."
+
+This is the practical version of the exam answer — the theorem tells you the two ends of the line; real products let you slide along it. Quorum reads and writes (from the replication note) are the standard way to slide: a strict majority can still serve consistently during most partial failures, and CAP's hard edge only bites when the *quorum itself* becomes unreachable.
+
+---
+
+## PACELC — the extension that pays off in interviews
+
+CAP only talks about the world *during a partition*. **PACELC** adds the peaceful world: **if Partition, choose Availability vs Consistency; Else, choose Latency vs Consistency (P → A/C, E → L/C).**
+
+```
+   partitions possible?  (yes, they always are)
+        |
+        v
+   during PARTITION -------------> trade A vs C  (CAP's question)
+        |
+        v
+   when every node is reachable --> no partition, so the trade is
+                                    L atency vs C onsistency
+        e.g. write-synchronous = strong C, slower
+             write-async        = fast, weaker C
+```
+
+- When there is *no* partition, the tension doesn't vanish — it just moves. Routing each write through one authoritative primary (what single-leader replication does, note 11) buys strong consistency at the cost of latency and a hot node. Letting every node accept writes locally buys speed at the cost of consistency even during normal operation.
+- This is why "AP" systems aren't chaotic: they happily behave consistently while the network is healthy, and only switch into reconcile-later mode when a partition actually happens.
+- In interviews, name-dropping PACELC right after CAP is the classic "I actually know the material, not just the slides" move — it also gives you the natural follow-up when asked "so is CAP just a partition-time thing?"
+
+---
+
 ## Quick revision
 
 - **C** = every read sees the latest write; **A** = every request gets *a* response; **P** = survive broken links between nodes.
 - You can have **only two of three** — and since partitions are inevitable in a distributed system, **P is forced**, so the real choice is **CP vs AP**.
 - **CA** only exists for a single database/node; at scale "we don't have an option to pick CA."
-- **CP** = block/redirect the stale node until it's fresh → banks, ledgers, anything where a wrong number is a blunder.
-- **AP** = keep serving stale data during the partition → Instagram posts, feeds; data converges after repair.
+- **CP** = block/redirect the stale node until it's fresh → banks, ledgers, ZooKeeper/etcd — anything where a wrong number is a blunder.
+- **AP** = keep serving stale data during the partition → Instagram posts, feeds, Cassandra/DynamoDB; data converges after repair.
 - Same tension as the money/bank story: consistency-first = centralize agreement, refuse to answer rather than answer wrong.
-- CAP is what turns the SQL-vs-NoSQL scale conversation into an explicit consistency-vs-availability trade-off.
+- CAP's "C" means **linearizable** consistency; eventual consistency is the AP substitute. Real systems are configurable (consistency levels), and **PACELC** extends the trade into non-partition time (L vs C).
 
 ---
 

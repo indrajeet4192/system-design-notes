@@ -28,7 +28,7 @@ REST is the most used API style out there, so this note is pure interview gold: 
 
 ## Anatomy of a URL
 
-The lecture's canonical example:
+The canonical example:
 
 ```
 http://mysite.com/api/v1/resource
@@ -46,7 +46,7 @@ http://mysite.com/api/v1/resource
 - **Version** — `v1`; when the API changes in a breaking way, you ship `v2` instead of breaking existing clients.
 - **Resource** — the entity you're navigating to get or pass data: a product, a coupon, a user on an e-commerce site; a student or course on an LMS.
 
-**Endpoint = method + path.** The digest puts it cleanly: *"Get method with this path combinedly creates an endpoint."* Hitting a URL with `GET` retrieves data; hitting the same URL with `POST` adds data.
+**Endpoint = method + path.** GET with a path reads data; POST against the same path adds data — the method decides the action, the URL only names the resource.
 
 Shorthand convention when talking: drop the protocol, domain, version and `/api` — just say `users`, `blogs/3/comments`.
 
@@ -62,7 +62,7 @@ The four data operations (create, read, update, delete) map onto HTTP methods �
 - **PATCH** — **partial update** — only the fields you send.
 - **DELETE** — **remove**: `DELETE /users/1` → user with ID 1 is gone.
 
-The same map works on the LMS entities from the course: `GET /courses` lists courses, `POST /courses` adds one, `GET /students/2` fetches a student, `DELETE /students/2` removes them.
+The same map works on plain LMS entities: `GET /courses` lists courses, `POST /courses` adds one, `GET /students/2` fetches a student, `DELETE /students/2` removes them.
 
 ```mermaid
 flowchart LR
@@ -88,7 +88,7 @@ flowchart LR
 
 > (I keep confusing PUT vs PATCH too — mnemonic: PUT = put the whole thing in the box again; PATCH = patch a hole.)
 
-- Rule of thumb from the lecture: for partial updates, **always use PATCH**.
+- Rule of thumb: for partial updates, **always use PATCH**.
 
 ---
 
@@ -103,7 +103,7 @@ The server never sends "just data" — it sends a **status code** saying what ha
 - **302 Found** — temporary redirect (come back here tomorrow and you'll be sent elsewhere again).
 - **400 Bad Request** — problem with the *request*: body data incorrect, validation failure, missing required fields.
 - **401 Unauthorized** — you're not authorized for this info (usually: not logged in / bad credentials).
-- **403 Forbidden** — you *are* logged in, but not allowed. LMS example: you open a course video you haven't enrolled in — the course exists, you exist, access is still denied.
+- **403 Forbidden** — you *are* logged in, but not allowed. LMS example: you open a course video you haven't enrolled in — the resource exists and your identity is known, yet access is denied.
 - **404 Not Found** — wrong URL or the resource doesn't exist (`GET /users/999` when 999 isn't in the DB).
 - **500 Internal Server Error** — something broke on the backend: syntax, logic, missing data, DB connection.
   - **Rule: log the details, never expose them to the client.** Send a generic 500; read the stack trace from your logs and fix it there. Users must not see internals.
@@ -155,7 +155,7 @@ Already covered above — the point is: don't invent nested URLs when you're rea
 - URLs name **resources (nouns)**, the **method carries the verb**.
   - Good: `GET /users`, `POST /users`.
   - Bad: `GET /getUser`, `POST /createUser` — verb + method is saying "get get" or "create create".
-- Use **plural** resource names: `/users`, `/courses`, `/comments` — not `/user`. A resource holds *many* records, so plural is the safer convention (the course repeats this same plural rule for DB tables later).
+- Use **plural** resource names: `/users`, `/courses`, `/comments` — not `/user`. A resource holds *many* records, so plural is the safer convention; the same rule shows up again for DB tables in [07-sql-databases](07-sql-databases.md).
 
 ---
 
@@ -202,7 +202,7 @@ Tutorials love returning a bare array:
 [ { "id": 1, "name": "Ash" }, { "id": 2, "name": "Gorav" } ]
 ```
 
-The lecture calls this an anti-pattern. **Every response body should be an object** — wrap the array under a key:
+This is a well-known anti-pattern. **Every response body should be an object** — wrap the array under a key:
 
 ```json
 {
@@ -263,7 +263,29 @@ Failure paths, same endpoint:
 - Not logged in → **401 Unauthorized**.
 - DB connection dies → **500 Internal Server Error**, details only in the server logs.
 
-And the update pair from the lecture: `PATCH /users/6` with body `{"username": "ak"}` → only the username changes, `name` and `age` survive. The same body sent via **PUT** would wipe `name` and `age` — that's the whole PUT/PATCH story in one request.
+And the classic PUT/PATCH pair: `PATCH /users/6` with body `{"username": "ak"}` → only the username changes, `name` and `age` survive. The same body sent via **PUT** would wipe `name` and `age` — that's the whole PUT/PATCH story in one request.
+
+---
+
+## Caching, idempotency, and versioning — the production concerns
+
+### Caching responses with headers
+
+- **Cache-Control** tells browsers, CDNs and proxies how long a response may be reused — `max-age=3600` says "safe for an hour", `no-cache` says "recheck with the server", `no-store` says "never persist it" (right for anything holding credentials).
+- **ETag** is a fingerprint of the body. A client sends `If-None-Match: <etag>` and a matching server replies **304 Not Modified** with an empty body — cache wins, bandwidth saved.
+- The trade-off worth naming: public catalog pages get long `max-age`; per-user private data gets `no-store`.
+
+### Idempotency — repeat a request, same result
+
+- **PUT is idempotent**: the same full-body PUT twice leaves the row identical, so it's safe to retry on a timeout.
+- **POST is not**: two identical POSTs create two rows — which is why money/order-creating endpoints take an **idempotency key** (a client-generated UUID) and return the stored first response on repeats.
+- Interview phrasing: "make mutating requests retry-safe" → PUT semantics up front + idempotency keys on POST.
+
+### Versioning — change the API without breaking clients
+
+- **URL path versioning** (`/api/v1/...`, `/api/v2/...`) is obvious, cache-friendly and easy to route; the catch is old versions linger forever.
+- **Header versioning** (`Accept: application/vnd.mysite.v2+json`) keeps one URL but is harder to see and debug.
+- Either way the rules hold: additive changes (new optional fields) are safe; deleting or renaming fields is exactly what forces a `v2` — and old clients get a deprecation window, never a hard break.
 
 ---
 
@@ -275,6 +297,7 @@ And the update pair from the lecture: `PATCH /users/6` with body `{"username": "
 - Path/query params are **visible in the URL** → sensitive data goes in the **body**.
 - URLs: **plural nouns only** (`/users`), nest clear relations (`/courses/1/students`), query params for filter/sort/paginate.
 - Response bodies: **always wrap** — `{"users": [...], "count": N}` — so you can add fields tomorrow without breaking clients.
+- Production polish: **Cache-Control + ETag** for fast reads, **idempotent PUT / idempotency keys on POST** so retries don't double-write, and **URL versioning** (`/api/v2`) so breaking changes never break live clients.
 
 ## Interview questions
 
